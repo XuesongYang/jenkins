@@ -351,16 +351,13 @@ public class Queue extends ResourceController implements Saveable {
             // first try the old format
             File queueFile = getQueueFile();
             if (queueFile.exists()) {
-                BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(queueFile)));
-                try {
+                try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(queueFile)))) {
                     String line;
                     while ((line = in.readLine()) != null) {
                         AbstractProject j = Jenkins.getInstance().getItemByFullName(line, AbstractProject.class);
                         if (j != null)
                             j.scheduleBuild();
                     }
-                } finally {
-                    in.close();
                 }
                 // discard the queue file now that we are done
                 queueFile.delete();
@@ -615,6 +612,9 @@ public class Queue extends ResourceController implements Saveable {
             for (Item item : duplicatesInQueue) {
                 for (FoldableAction a : Util.filter(actions, FoldableAction.class)) {
                     a.foldIntoExisting(item, p, actions);
+                    if (LOGGER.isLoggable(Level.FINE)) {
+                        LOGGER.log(Level.FINE, "after folding {0}, {1} includes {2}", new Object[] {a, item, item.getAllActions()});
+                    }
                 }
             }
 
@@ -1052,7 +1052,13 @@ public class Queue extends ResourceController implements Saveable {
             List<Item> result = new ArrayList<Item>();
             result.addAll(blockedProjects.getAll(t));
             result.addAll(buildables.getAll(t));
-            result.addAll(pendings.getAll(t));
+            // Do not include pendings—we have already finalized WorkUnitContext.actions.
+            if (LOGGER.isLoggable(Level.FINE)) {
+                List<BuildableItem> thePendings = pendings.getAll(t);
+                if (!thePendings.isEmpty()) {
+                    LOGGER.log(Level.FINE, "ignoring {0} during scheduleInternal", thePendings);
+                }
+            }
             for (Item item : waitingList) {
                 if (item.task.equals(t)) {
                     result.add(item);
@@ -1417,7 +1423,7 @@ public class Queue extends ResourceController implements Saveable {
                             p.task.getFullDisplayName());
                     p.isPending = false;
                     pendings.remove(p);
-                    makeBuildable(p);
+                    makeBuildable(p); // TODO whatever this is for, the return value is being ignored, so this does nothing at all
                 }
             }
 
